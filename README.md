@@ -14,13 +14,6 @@ applications.
 - **Simulated Claims Data**: `commercial_claims_cpb.RData`  
   
 
-## Additional Modifications
-
-- Manual control over table titles and numbering (no auto-numbering)
-- Float-resistant LaTeX tables using `longtable` and raw LaTeX blocks
-- Conditional logic for BRFSS smoking variables
-- Clean, reproducible RMarkdown-to-PDF pipeline using `pdflatex`
-
 ## How to Reproduce
 
 To regenerate the notebook and PDF:

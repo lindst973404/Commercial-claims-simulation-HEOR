@@ -1,0 +1,434 @@
+---
+output: 
+  html_document:
+    toc: false
+    toc_depth: 2
+    number_sections: false
+    theme: flatly
+    highlight: tango
+    df_print: paged
+---
+<div style="text-align: center; margin-top: 20px;">
+
+  <h1 style="font-size: 32px; font-weight: bold;">Simulated Claims Data for Payer-Provider Workflow Analytics I</h1>
+  <h3 style="font-size: 20px; font-weight: normal;">Generating findings from commercial claims data for Health Economics and Outcome Research workflows</h3>
+
+  <p><strong>Lindsay Trujillo, PhD, MPH</strong></p>
+  <p><em>September 19, 2025</em></p>
+
+  <p>
+    <a href="mailto:lindttruj@gmail.com" style="color: blue; text-decoration: underline;">Email: lindttruj@gmail.com</a>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    <a href="https://www.linkedin.com/in/lindsay-trujillo" style="color: blue; text-decoration: underline;">LinkedIn</a>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    <a href="https://scholar.google.com/citations?user=wwlDxpwAAAAJ&hl=en" style="color: blue; text-decoration: underline;">Google Scholar</a>
+  </p>
+
+</div>
+
+
+# Introduction
+
+To practice working with claims data, I created a simulation intended to mimic commercial insurance claims data to practice working with data sources outside of traditional surveillance. This practice was created by an ongoing project working with synthetic Medicare data from the Centers for Medicare and Medicaid Service. As a result, I took it to the next step to enter the Health Economic and Outcome Research space, where getting as much experience working with claims data is beneficial. As a result, I created a simulation from my ongoing project to create a dummy dataset intended to mimic commercial insurance claims data. 
+
+For this exercise, I generated synthetic claims data to simulate real-world healthcare workflows. It includes provider-level cost and utilization summaries, payer-side burden analysis, and mock Tables, Listing, and Figures (TLF) outputs aligned with HEOR and real-world evidence standards. In addition, I sought to create TLFs for both HTML static environments as well as dataframes ready to be implemented to dashboards such as RShiny and Tableau.
+
+From my simulation, I was able to produce 7,997 randomized records, drawing from 100 unique providers and over 10,000 simulated patients. Each claim includes a randomized diagnosis and diagnosis code based on a pre-ascribed list for the sake of this workflow. For this data, service dates span from January 1, 2020 to December 31, 2021. 
+
+```{r setup, include=FALSE}
+library(tibble)      # for tibble()
+library(truncnorm)
+library(knitr)
+library(kableExtra)
+library(scales) 
+library(tidyverse)   # loads tibble, dplyr, ggplot2, etc.
+library(purrr)
+library(broom)
+library(DT)
+
+claims_full <- load("commercial_claims_cpb.RData")
+
+```
+
+```{r dataload, include=FALSE}
+
+load("commercial_claims_cpb.RData")
+claims_full <- claims_bias
+rm(claim_bias)
+
+```
+# Objective
+
+For this exercise, I will: 
+
+1. Estimate the total number of claims and average claims per patient by age, race/ethnicity, and sex
+2. Determine the proportion of claims that were the highest cost, defined by costs being in the top 10%
+3. Of the claims that are in the top 10% of costs, identify who are the most burdened. 
+
+## Total number of claims and average claims per patient
+
+```{r q1}
+# Converting age to categories: 
+claims_full <- claims_full %>%
+  mutate(
+    age_categ = case_when(
+      age >= 18 & age <= 29 ~ "18–29",
+      age >= 30 & age <= 39 ~ "30–39",
+      age >= 40 & age <= 49 ~ "40–49",
+      age >= 50 & age <= 59 ~ "50–59",
+      age >= 60 & age <= 69 ~ "60–69",
+      age >= 70 & age <= 79 ~ "70–79",
+      age >= 80 ~ "80+",
+      TRUE ~ "Unknown"
+    ),
+    age_categ = factor(age_categ, levels = c(
+      "18–29", "30–39", "40–49", "50–59", "60–69", "70–79", "80+"
+    ))
+  )
+
+#Providing a categorical variable to describe ICD10-CM codes: 
+claims_full <- claims_full %>%
+  mutate(
+    icd_category = case_when(
+      ICD10_CM == "E11.9"     ~ "Diabetes",
+      ICD10_CM == "I10"       ~ "Hypertension",
+      ICD10_CM == "J45.909"   ~ "Asthma",
+      ICD10_CM == "C34.90"    ~ "Lung Cancer",
+      TRUE                    ~ "Other/Unknown"
+    )
+  )
+
+
+# Building a table 1
+summarize_table1 <- function(data, var) {
+  var_sym <- rlang::ensym(var)
+  total_patients <- dplyr::n_distinct(data$patient_id)
+  
+  data %>%
+    dplyr::group_by(!!var_sym) %>%
+    dplyr::summarise(
+      n_patients = dplyr::n_distinct(patient_id),
+      percent = round(n_patients / total_patients * 100, 1),
+      total_claims = dplyr::n(),
+      avg_claims_per_patient = round(total_claims / n_patients, 2),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      `N (%)` = paste0(scales::comma(n_patients), " (", percent, "%)"),
+      `Total Claims` = scales::comma(total_claims, accuracy = 1),
+      `Avg Claims per Patient` = scales::comma(avg_claims_per_patient, accuracy = 0.01)
+    ) %>%
+    dplyr::select(
+      Variable = !!var_sym,
+      `N (%)`,
+      `Total Claims`,
+      `Avg Claims per Patient`
+    )
+}
+
+age_tbl  <- summarize_table1(claims_full, age_categ)
+race_tbl <- summarize_table1(claims_full, race)
+sex_tbl  <- summarize_table1(claims_full, sex)
+cond_tbl <- summarize_table1(claims_full, icd_category)
+
+#Stacking the tables 
+table1_full <- bind_rows(
+  age_tbl %>% mutate(Variable_Group = "Age Group"),
+  race_tbl %>% mutate(Variable_Group = "Race/Ethnicity"),
+  sex_tbl %>% mutate(Variable_Group = "Sex"),
+  cond_tbl %>% mutate(Variable_Group = "Health Condition")
+) %>%
+  select(Variable_Group, Variable, `N (%)`, `Total Claims`, `Avg Claims per Patient`)
+
+#Calculate overall Summary Row: 
+summary_row <- tibble(
+  Variable_Group = "Overall Summary",
+  Variable = "Total",
+  `N (%)` = paste0(scales::comma(n_distinct(claims_full$patient_id)), " (100%)"),
+  `Total Claims` = scales::comma(nrow(claims_full), accuracy = 1),
+  `Avg Claims per Patient` = scales::comma(
+    round(nrow(claims_full) / n_distinct(claims_full$patient_id), 2),
+    accuracy = 0.01
+  )
+)
+#Append table
+table1 <- bind_rows(table1_full, summary_row)
+
+# For HTML output
+table1 %>%
+  kable(
+    caption = "<span style='font-size:18px; font-weight:bold; color:black; text-align:center; display:block;'>Table 1: Baseline Summary by Demographics and Health Condition</span>",
+    format = "html"
+  ) %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(1, extra_css = "text-align:left;") %>%  
+  column_spec(2, extra_css = "text-align:center;") %>%  
+  column_spec(3, extra_css = "text-align:right;") %>%  
+  column_spec(4, extra_css = "text-align:right;") %>%  
+  column_spec(5, extra_css = "text-align:right;") %>%  
+    collapse_rows(columns = 1, valign = "top")
+
+
+```
+
+ 
+Among the 8,000 claims, we see that we have a total of 4,997 patients with an overall average of 1.6 claims per patient (Table 1). We see that we have nearly 22% being 50-59 years old and 21% being 60-69 years old. We also see that 20% of our patients identified as Black and that the two most common Health conditions reported were Diabetes (45%) and Hypertension (44%).
+
+## High-cost claims
+
+Insurer may care to investigate high-cost claims for risk management, care optimization, and subsequential forecasting. It can also be used for potential insight to outlier claims, which can be anomalies or fraud. To help investigate, let's look closely at claims that are high-cost, which will be identified as claims being within the top 10 percentile. 
+
+```{r q2}
+#Set threshold value for 90 percentile
+threshold <- quantile(claims_full$claim_amount, 0.90)
+
+#Working with dataframe with only high-cost claims
+high_cost_claims <- claims_full %>%
+  filter(claim_amount >= threshold)
+
+#Proportion calculation set-up
+#Overall claims
+total_claims <- nrow(high_cost_claims)
+
+table2_content <- high_cost_claims %>%
+  group_by(icd_category) %>%
+  summarise(
+    n_claims = n(), 
+    total_cost = sum(claim_amount, na.rm = TRUE),
+    avg_claim = round(total_cost/n_claims, 2), 
+    .groups="drop"
+  ) %>%
+  mutate(
+    claim_pct = round((n_claims/total_claims)*100, 1),
+    `Claims (%)` = paste0(n_claims, " (", claim_pct, "%)"),
+    `Total Cost` = scales::dollar(total_cost), 
+    avg_claim = scales::dollar(avg_claim) 
+    ) %>%
+  select (
+    `Chronic Condition` = icd_category,
+    `Claims (%)`,
+    `Total Cost`,
+    `Avg Cost per Claim` = avg_claim
+  )
+
+#Calculate overall Summary Row: 
+summary_row <- tibble(
+  `Chronic Condition` = "Overall Total",
+  `Claims (%)` = paste0(nrow(high_cost_claims), " (100%)"),
+  `Total Cost` = scales::dollar(sum(high_cost_claims$claim_amount, na.rm = TRUE)),
+  `Avg Cost per Claim` = scales::dollar(
+    round(sum(high_cost_claims$claim_amount, na.rm = TRUE) / nrow(high_cost_claims), 2)
+  )
+)
+
+#Append
+table2 <- bind_rows(table2_content, summary_row)
+
+table2 %>%
+  kable(
+    caption = "<span style='font-size:18px; 
+                            font-weight:bold; 
+                            color:black; 
+                            text-align:center; 
+                            display:block;'
+    >Table 2: Claim Burden and Cost by Health Condition</span>",
+    format = "html",
+    escape = FALSE
+  ) %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(3, extra_css = "text-align:right;") %>%  
+  column_spec(4, extra_css = "text-align:right;")
+
+```
+We see that the total cost of the top 10% of claims were nearly $1.5 million USD with an average of $1,871.88 per claim. We have over a third of claims within the top 10% were diagnosed with diabetes and 30% diagnosed for hypertension. We see that the average cost per claim for diabetes cases were $1,879.37 while hypertension cases wer $1,875.76. While they may appear to be close to the overall average, it was decided to further investigate the demographic profile to determine who was the most burdened. 
+
+
+## Identifying burden of high-costs among patients
+
+To investigate this question, we'll go forward with conducting a regression to determine relative burden by age, race/ethnicity, and sex for each chronic condition. Even though we will generate information for all four chronic conditions, we will pay attention more closely to Diabetes and Hypertension. 
+
+```{r q3}
+# Create binary flag
+claims_full <- claims_full %>%
+  mutate(
+    high_cost_flag = if_else(claim_amount >= threshold, 1, 0)
+  )
+
+# Function to subset data by ICD code
+filter_icd <- function(data, icd_code) {
+  data %>% filter(ICD10_CM == icd_code)
+}
+
+hc1 <- filter_icd(claims_full, "E11.9")     
+hc2 <- filter_icd(claims_full, "I10")       
+hc3 <- filter_icd(claims_full, "J45.909")   
+hc4 <- filter_icd(claims_full, "C34.90")    
+
+#Building function for running logistic model 
+#Only exp betas, conf levels, and p-values
+run_high_cost_model <- function(data, condition_name) {
+  data <- data %>%
+    mutate(
+      race = factor(race, levels = c("White","Black", "Hispanic", "Asian", "Other")),
+      sex = factor(sex, levels = c("Male", "Female"))
+    )
+  
+  model <- glm(high_cost_flag ~ age_categ + race + sex,
+               data = data,
+               family = "binomial")
+  
+  broom::tidy(model, exponentiate = TRUE, conf.int = TRUE) %>%
+    mutate(condition = condition_name) %>%
+    select(term, estimate, conf.low, conf.high, p.value)
+}
+
+hc1_model <- run_high_cost_model(hc1, "Diabetes")
+hc2_model <- run_high_cost_model(hc2, "Hypertension")
+hc3_model <- run_high_cost_model(hc3, "Asthma")
+hc4_model <- run_high_cost_model(hc4, "Lung Cancer")
+
+#Making customization for Table 3
+#Creating labels for setup
+custom_labels <- list(
+  Age = c(
+    "age_categ30–39" = "30 – 39 years",
+    "age_categ40–49" = "40 – 49 years",
+    "age_categ50–59" = "50 – 59 years",
+    "age_categ60–69" = "60 – 69 years",
+    "age_categ70–79" = "70 – 79 years",
+    "age_categ80+"   = "80+ years"
+  ),
+  Race = c(
+    "raceBlack"    = "Black",
+    "raceHispanic" = "Hispanic",
+    "raceAsian"    = "Asian",
+    "raceOther"    = "Other" 
+  ),
+  Sex = c(
+    "sexFemale" = "Female"
+  )
+)
+#Reference level vector for Table setup
+ref_levels <- list(
+  Age = "18–29 years",
+  Race = "White",
+  Sex = "Male"
+)
+
+#Vector of the 4 models
+chronic_models <- list(
+  Diabetes = hc1_model,
+  Hypertension = hc2_model,
+  Asthma = hc3_model,
+  `Lung Cancer` = hc4_model
+)
+
+# Stack the four models into one tidy tibble for 
+# downstream formatting and dashboard integration
+stacked_models <- purrr::map2_df(
+  chronic_models,names(chronic_models), ~ mutate(.x, Condition = .y)
+  )
+
+#Bringing in labels
+t3_label <- stacked_models %>%
+  mutate(
+    Predictor = case_when(
+      str_detect(term, "age_categ") ~ "Age",
+      str_detect(term, "race") ~ "Race",
+      str_detect(term, "sex") ~ "Sex",
+      TRUE ~ "Other"
+    ),
+    Level = map2_chr(Predictor, term, function(pred, t) {
+      label <- custom_labels[[pred]][[t]]
+      if (is.null(label)) as.character(t) else as.character(label)
+    }),
+    OR = round(estimate, 2),
+    CI = paste0("[", round(conf.low, 2), ", ", round(conf.high, 2), "]"),
+    `p-value` = round(p.value, 3)
+  ) %>%
+  select(Condition, Predictor, Level, OR, CI, `p-value`)
+
+
+# Function to subset data by ICD code
+filter_cc <- function(data, cc) {
+  data %>% filter(Condition == cc) 
+}
+diabetes_tbl      <- filter_cc(t3_label, "Diabetes")     
+hypertension_tbl  <- filter_cc(t3_label, "Hypertension")    
+asthma_tbl        <- filter_cc(t3_label, "Asthma")     
+lungcancer_tbl    <- filter_cc(t3_label, "Lung Cancer")
+
+
+make_ref_tbl <- function(condition_name) {
+  tibble(
+    Condition = condition_name,
+    Predictor = c("Age", "Race", "Sex"),
+    Level     = c(ref_levels$Age, ref_levels$Race, ref_levels$Sex),
+    OR        = NA_real_,
+    CI        = "Reference",
+    `p-value` = NA_real_
+  )
+}
+
+diabetes_ref      <- make_ref_tbl("Diabetes")
+hypertension_ref  <- make_ref_tbl("Hypertension")
+asthma_ref        <- make_ref_tbl("Asthma")
+lungcancer_ref    <- make_ref_tbl("Lung Cancer")
+
+
+combine_formal <- function(tbl,ref) {
+  bind_rows(
+  tbl %>% slice(0),  # placeholder for intercept if needed
+  ref[1,], 
+  tbl %>% filter(Predictor == "Age"),
+  ref[2,],         # Race reference
+  tbl %>% filter(Predictor == "Race"),
+  ref[3,],           # Sex reference
+  tbl %>% filter(Predictor == "Sex"),
+  ref %>% filter(Predictor == "Other")
+  )
+}
+
+diabetes_final      <- combine_formal(diabetes_tbl,diabetes_ref)
+hypertension_final  <- combine_formal(hypertension_tbl,hypertension_ref)
+asthma_final        <-combine_formal(asthma_tbl,asthma_ref)
+lungcancer_final    <-combine_formal(lungcancer_tbl,lungcancer_ref)
+
+table3 <- bind_rows(
+  diabetes_final,
+  hypertension_final,
+  asthma_final,
+  lungcancer_final
+)
+
+
+table3 %>%
+  kable(
+    format = "html",
+    caption = "<div style='text-align:center; color:black; font-size:18px; font-weight:bold;'>Table 3: Adjusted Odds Ratios by Chronic Condition</div>",    escape = FALSE
+  ) %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover")
+  ) %>%
+  collapse_rows(
+    columns = 1:2,  # Collapse Condition and Predictor
+    valign = "top"
+  )
+
+```
+
+Of our diabetes cases that are within the highest-burden for cost, we see that there are vast differences by race. Among claims that are in the top decile, patients with diabetes who identified as Black had over 6 times the odds of incurring a high-cost claim compared to White patients after adjusting for age and sex (aOR: 6.14, 95% CI: 4.51 - 8.45). We also see that patients with diabetes who identified as Hispanic reported over twice the odds of incurring high-costs compared to White patients (aOR: 2.78, 95% CI: 1.97 - 2.94). We also see a similar pattern of burden by race among patients with Hypertension: Black patients who were diagnosed with hypertension had over 7 times the odds of incurring high-costs compared to White patients (aOR: 7.64, 95% CI: 5.61 - 10.46). Hispanic patients diagnosed with hypertensions had over 3 times the odds of being burdened with high-costs compared to their White patients (aOR: 3.21, 95% CI: 2.05 - 4.95). We also see a similar pattern of burden by race/ethnicity for patients diagnosed for asthma and those with lung cancer. 
+
+# Discussion
+
+
+We see that, from the 8,000 commercial insurance claims, we see that there was an average of 1.6 claims per patients with the two most common chronic condition among the patients were Diabetes and Hypertension. The total cost of claims that were in the top decile were nearly $1.5 million. Among cases that had a chronic condition, the burden of high-costs were experienced among Black and Hispanic patients after accounting for age and sex of patient. 
+
+# Next steps
+
+I hope to develop these (artificial) findings to visual with ggplot() in addition to other libraries/tools that are compatible with Tableau and other dashboards. If there is interest to see this information, please feel free to reach out to me.
+
+*Suggested citation* 
+
+Trujillo L. Simulated Claims Dataset for Payer-Provider Workflow Analytics I. GitHub. September 19, 2025. https://github.com/lindst973404/.

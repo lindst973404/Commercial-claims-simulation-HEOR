@@ -1,4 +1,4 @@
-# p Simulated Claims Data for Payer-Provider Workflow Analytics I
+# Simulated Claims Data for Payer-Provider Workflow Analytics I
 
 This project explores high-cost utilization patterns among chronic condition 
 cohorts using simulated commercial claims data. The analysis focuses on 
@@ -32,7 +32,7 @@ To regenerate the notebook and PDF:
 
 > Note: This notebook is designed for manual control over table layout and numbering. Auto-numbering and float environments are intentionally disabled.
 
-## p$ Author
+## Author
 
 **Lindsay Trujillo, PhD, MPH**  
 Principal Data Scientist & Epidemiologist  
@@ -44,6 +44,6 @@ clear stakeholder-ready reporting.
 
 Trujillo L. *Simulated Claims Data for Payer-Provider Workflow Analytics*. GitHub. September 2025.
 
-## p License
+## License
 
 This project is released under the MIT License. See `LICENSE` for details.

@@ -28,7 +28,7 @@ To regenerate the notebook and PDF:
 ## Author
 
 **Lindsay Trujillo, PhD, MPH**  
-Principal Data Scientist & Epidemiologist  
+Senior Data Scientist & Epidemiologist  
 Specializing in reproducible analytics, regulatory documentation, and 
 data simulation for advanced training and generating insights for 
 clear stakeholder-ready reporting.
